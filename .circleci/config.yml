@@ -3,56 +3,75 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/python:3.12
+      - image: cimg/python:3.14
     steps:
       - checkout
 
       - run:
-          name: Install uv
-          command: |
-            curl -Ls https://astral.sh/uv/install.sh | sh
-            echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> $BASH_ENV
-            source $BASH_ENV
-
-      - run:
-          name: Install dependencies using uv
-          command: uv pip install --system -r <(uv pip compile --extra dev pyproject.toml)
+          name: Install dependencies
+          command: uv sync --locked
 
       - run:
           name: Run tests
-          command: python -m pytest tests/ -v
+          command: uv run pytest tests/ -v
 
       - run:
           name: Build package
-          command: |
-            python -m build
+          command: uv build
 
       - persist_to_workspace:
           root: .
           paths:
             - dist
 
+  inspect:
+    docker:
+      - image: cimg/python:3.14-node
+    steps:
+      - checkout
+
+      - run:
+          name: Install dependencies
+          command: uv sync --locked
+
+      - run:
+          name: Check the tools with the MCP Inspector CLI
+          command: |
+            npx --yes @modelcontextprotocol/inspector@2.15.0 --cli \
+              uv run mcp-document-brain \
+              --method tools/list --format json > tools.json
+            jq -e --argjson want '["read_any_document","save_file_to_pc"]' \
+              '[.result.tools[].name] as $have | $want - $have | length == 0' tools.json
+
+      - run:
+          name: Call read_any_document with the MCP Inspector CLI
+          command: |
+            npx --yes @modelcontextprotocol/inspector@2.15.0 --cli \
+              uv run mcp-document-brain \
+              --method tools/call --tool-name read_any_document \
+              --tool-args-json '{"file_path": "README.md"}' --format json > read.json
+            jq -e '.result.content[0].text | test("MCP Document Reader")' read.json
+
   publish:
     docker:
-      - image: cimg/python:3.12
+      - image: cimg/python:3.14
     steps:
       - checkout
       - attach_workspace:
           at: .
       - run:
-          name: Install twine
-          command: pip install --upgrade twine
-      - run:
-          name: Upload to PyPI
-          command: twine upload dist/* -u "$PYPI_USERNAME" -p "$PYPI_PASSWORD"
+          name: Publish to PyPI
+          command: uv publish
 
 workflows:
   build-test-publish:
     jobs:
-      - build
+      - build:
+          filters: pipeline.git.branch or (pipeline.git.tag matches /^v.*/)
+      - inspect:
+          filters: pipeline.git.branch or (pipeline.git.tag matches /^v.*/)
       - publish:
           requires:
             - build
-          filters:
-            branches:
-              only: main
+            - inspect
+          filters: pipeline.git.tag matches /^v.*/
