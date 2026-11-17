@@ -1,6 +1,6 @@
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.prompts import base
-from mcp.server.fastmcp.resources import DirectoryResource
+from fastmcp import FastMCP
+from fastmcp.prompts import Message
+from fastmcp.resources import DirectoryResource
 from pathlib import Path
 import os
 from markitdown import MarkItDown
@@ -8,7 +8,7 @@ from markitdown import MarkItDown
 md = MarkItDown()
 
 # Initialize the FastMCP server
-mcp = FastMCP("DocumentBrain", dependencies=["markitdown[all]"])
+mcp = FastMCP("DocumentBrain")
 
 @mcp.tool(
     annotations={
@@ -34,27 +34,23 @@ def read_any_document(file_path: str) -> str:
     annotations={
         "title": "Save File to PC",
         "readOnlyHint": False,
-        "openWorldHint": True
+        "openWorldHint": False
     }
 )
 def save_file_to_pc(filepath: str, content: str) -> str:
     """
-    Save content to a file on the desktop.
+    Save content to a file on your computer.
     Args:
-        filename: Name of the file to save (can include subdirectory)
+        filepath: Path of the file to save, for example ~/Desktop/summary.md
         content: Content to write to the file
     Returns:
         A success or error message
     """
     try:
-        # Expand the desktop path
-        desktop_path = os.path.expanduser(filepath)
-        # Ensure the filename doesn't contain any path traversal attempts
-        safe_filename = os.path.basename(filepath)
-        # Create the full file path
-        full_path = os.path.join(desktop_path, safe_filename)
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        # Expand ~ to the user's home directory
+        full_path = os.path.expanduser(filepath)
+        # Ensure the parent directory exists
+        os.makedirs(os.path.dirname(full_path) or ".", exist_ok=True)
         # Write the content to the file
         with open(full_path, 'w', encoding='utf-8') as f:
             f.write(content)
@@ -90,25 +86,21 @@ def get_document_content(filename: str) -> str:
     except Exception as e:
         return f"Error reading file {filename}: {str(e)}"
 
-# Prompt: Summarize document
+# Prompt: Analyze document data
 @mcp.prompt()
-def analyze_data(text: str) -> list[base.Message]:
-    """Prompt to generate a summary of the provided document text.
+def analyze_data(text: str) -> list[Message]:
+    """Prompt to analyze the data in the provided document text.
     Args:
-        text: The content of the document to be summarized.
+        text: The content of the document to be analyzed.
     Returns:
-        A list of messages guiding the LLM to produce a summary.
+        A list of messages guiding the LLM to analyze the data.
     """
     return [
-        base.Message(
-            role="user",
-            content=[
-                base.TextContent(
-                    text=f"Assume the role of a data analyst specializing in academic research. \
-                    Your task is to critically analyze the data presented in the file of the attached academic document. \
-                    Start by summarizing the key data points and notable findings. Identify any patterns, trends, correlations, or anomalies within the dataset.:\n\n{text}"
-                )
-            ]
+        Message(
+            "Assume the role of a data analyst specializing in academic research. "
+            "Your task is to critically analyze the data presented in the attached academic document. "
+            "Start by summarizing the key data points and notable findings. "
+            f"Identify any patterns, trends, correlations, or anomalies within the dataset:\n\n{text}"
         )
     ]
 

@@ -1,5 +1,5 @@
 import pytest
-from src.document_brain.server import read_any_document
+from document_brain.server import read_any_document
 
 # Fixture to create a temporary text file
 @pytest.fixture
